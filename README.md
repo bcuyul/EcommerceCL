@@ -198,7 +198,6 @@ PROB_CARRITO_CONVERSION: "0.65"  # probabilidad de conversión de carrito
 ## 📖 Documentación técnica
 
 - [Guía de inicio rápido (easy_mode)](./easy_mode/README.md)
-- [Informe técnico completo v4 (PDF)](./docs/ecommerce_bi_platform_v4_informe.pdf)
 - [Arquitectura del sistema](./docs/arquitectura_v3.md)
 - [Decisiones de diseño](./docs/decision_log.md)
 - [Errores corregidos v4](./docs/bugfix_log.md)
