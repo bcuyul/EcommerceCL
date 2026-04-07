@@ -1,0 +1,12 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Instalar dependencias
+RUN pip install --no-cache-dir asyncpg
+
+# Environment variables default
+ENV PYTHONUNBUFFERED=1
+
+# CMD apunta directamente al script que se monta como volumen
+CMD ["python", "run_platform_v3.py"]

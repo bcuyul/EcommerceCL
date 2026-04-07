@@ -1,0 +1,117 @@
+version: "3.9"
+
+# =============================================================================
+# Ecommerce CL v3 — Easy Mode
+# Un solo comando: docker compose up
+#
+# Servicios:
+#   postgres   → PostgreSQL 16 + init automático (todos los SQLs en orden)
+#   platform   → run_platform_v3.py (simulador OLTP + procesador OLAP)
+#   superset   → Apache Superset (BI / DirectQuery)
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 16
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: ecommerce_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ecommerce_cl
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Los scripts de init se ejecutan en orden alfabético al crear el volumen
+      - ./init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ecommerce_cl"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # Plataforma (simulador OLTP + procesador OLAP)
+  # Espera a que PostgreSQL esté listo antes de arrancar
+  # ---------------------------------------------------------------------------
+  platform:
+    build:
+      context: .
+      dockerfile: Dockerfile.platform
+    container_name: ecommerce_platform
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST:            postgres
+      DB_PORT:            "5432"
+      DB_NAME:            ecommerce_cl
+      DB_USER:            ecommerce
+      DB_PASS:            ecommerce123
+      OLTP_INTERVAL_MIN:  "5"
+      OLTP_INTERVAL_MAX:  "10"
+      OLAP_BATCH_SIZE:    "100"
+      OLAP_POLL_INTERVAL: "2"
+      MAX_OLAP_RETRIES:   "3"
+    volumes:
+      - ../pro_mode/python:/app:ro
+
+  # ---------------------------------------------------------------------------
+  # Apache Superset
+  # ---------------------------------------------------------------------------
+  superset:
+    image: apache/superset:3.1.0
+    container_name: ecommerce_superset
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SUPERSET_SECRET_KEY: "ecommerce_cl_v3_superset_secret"
+      SUPERSET_LOAD_EXAMPLES: "no"
+      DATABASE_DIALECT: postgresql
+      DATABASE_HOST:     postgres
+      DATABASE_PORT:     "5432"
+      DATABASE_DB:       ecommerce_cl
+      DATABASE_USER:     pbi_analytical
+      DATABASE_PASSWORD: data_pbi_123
+    ports:
+      - "8088:8088"
+    volumes:
+      - superset_data:/app/superset_home
+      - ./superset_init.sh:/superset_init.sh:ro
+    command: >
+      sh -c "
+        superset db upgrade &&
+        superset fab create-admin
+          --username admin --firstname Admin --lastname User
+          --email admin@ecommerce.cl --password admin123 &&
+        superset init &&
+        sh /superset_init.sh &&
+        gunicorn
+          --bind 0.0.0.0:8088
+          --workers 4
+          --timeout 120
+          'superset.app:create_app()'
+      "
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8088/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  postgres_data:
+  superset_data:
+
+networks:
+  default:
+    name: ecommerce_network

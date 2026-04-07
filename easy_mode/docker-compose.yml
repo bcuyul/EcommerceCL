@@ -1,0 +1,127 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: ecommerce_db_v3
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ecommerce_cl
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./init:/docker-entrypoint-initdb.d:ro
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ecommerce_cl"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: ecommerce_redis_v3
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  platform:
+    build:
+      context: .
+      dockerfile: Dockerfile.platform
+    container_name: ecommerce_platform_v3
+    restart: on-failure
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: ecommerce_cl
+      DB_USER: ecommerce
+      DB_PASS: ecommerce123
+      OLTP_INTERVAL_MIN: "1.5"
+      OLTP_INTERVAL_MAX: "3.5"
+    volumes:
+      - ../python/run_platform_v5.py:/app/run_platform_v5.py:ro
+      - ./wait_for_db.py:/app/wait_for_db.py:ro
+    command: >
+      /bin/sh -c "
+      python /app/wait_for_db.py &&
+      python /app/run_platform_v5.py
+      "
+
+  superset-init:
+    image: apache/superset:3.1.0
+    container_name: ecommerce_superset_init_v3
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SUPERSET_SECRET_KEY: "7_this_is_a_professional_and_secure_key_8_!"
+      SUPERSET_CONFIG_PATH: /app/pythonpath/superset_config.py
+      SUPERSET_METADATA_DB: postgresql://postgres:postgres@db:5432/superset_db
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    volumes:
+      - ./superset/superset_config.py:/app/pythonpath/superset_config.py:ro
+      - superset_home:/app/superset_home
+    command: >
+      /bin/sh -c "
+      superset db upgrade &&
+      (superset fab create-admin
+        --username admin
+        --firstname Admin
+        --lastname User
+        --email admin@superset.com
+        --password admin || true) &&
+      superset init
+      "
+
+  superset:
+    image: apache/superset:3.1.0
+    container_name: ecommerce_superset_v3
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      superset-init:
+        condition: service_completed_successfully
+    environment:
+      SUPERSET_SECRET_KEY: "7_this_is_a_professional_and_secure_key_8_!"
+      SUPERSET_CONFIG_PATH: /app/pythonpath/superset_config.py
+      SUPERSET_METADATA_DB: postgresql://postgres:postgres@db:5432/superset_db
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    volumes:
+      - ./superset/superset_config.py:/app/pythonpath/superset_config.py:ro
+      - superset_home:/app/superset_home
+    ports:
+      - "8088:8088"
+    command: >
+      /bin/sh -c "
+      gunicorn
+      --bind 0.0.0.0:8088
+      --workers 2
+      --timeout 120
+      'superset.app:create_app()'
+      "
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8088/health >/dev/null || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+
+volumes:
+  db_data:
+  superset_home:
