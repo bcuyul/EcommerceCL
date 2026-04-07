@@ -220,4 +220,4 @@ Sí. Power BI puede conectarse directamente a PostgreSQL usando el conector nati
 ---
 
 *Proyecto de portafolio — Brayan Cuyul · [github.com/bcuyul/EcommerceCL](https://github.com/bcuyul/EcommerceCL)*
-*Linkedin - Brayan Cuyul · https://www.linkedin.com/in/bcuyul *
+Linkedin - Brayan Cuyul · https://www.linkedin.com/in/bcuyul 
